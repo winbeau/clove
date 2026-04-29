@@ -213,3 +213,6 @@ __marimo__/
 app/static/
 # Local TLS certs installed by acme.sh
 /deploy/certs/
+# Local credential bookkeeping (api-keys.md etc); README is allowlisted below
+/secrets/*
+!/secrets/README.md
