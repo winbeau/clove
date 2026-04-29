@@ -66,13 +66,25 @@ def pick_organization(orgs: list[dict]) -> dict:
 
 
 def main() -> None:
-    raw_cookie = getpass.getpass("Paste sessionKey value (input hidden): ").strip()
+    print(
+        "Paste the FULL Cookie header from a working claude.ai browser request.\n"
+        "  Quickest way: open https://claude.ai, F12 -> Network, click any request,\n"
+        "  copy the value of the `Cookie:` request header (one long line with `;`).\n"
+        "  Must include `sessionKey` and Cloudflare's `__cf_bm` / `cf_clearance`\n"
+        "  if your IP gets challenged. Pasting only sessionKey will fail with 403.\n",
+        file=sys.stderr,
+    )
+    raw_cookie = getpass.getpass("Paste cookie header (input hidden): ").strip()
     if not raw_cookie:
         sys.exit("Empty cookie, aborting.")
-    if raw_cookie.startswith("sessionKey="):
+    if "=" not in raw_cookie:
+        cookie_header = f"sessionKey={raw_cookie}"
+    elif raw_cookie.startswith("sessionKey=") and ";" not in raw_cookie:
         cookie_header = raw_cookie
     else:
-        cookie_header = f"sessionKey={raw_cookie}"
+        cookie_header = raw_cookie
+    if "sessionKey=" not in cookie_header:
+        sys.exit("Pasted cookie does not contain sessionKey=, aborting.")
 
     headers = {**BROWSER_HEADERS, "Cookie": cookie_header}
 
