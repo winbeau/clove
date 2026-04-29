@@ -33,10 +33,10 @@ install: build
 	@echo "✓ Clove installed successfully"
 	@echo "Run 'clove' to start the application"
 
-# Install in development mode
+# Install in development mode (uv-managed: provisions Python 3.13 venv + rnet extra)
 install-dev:
-	@pip install -e .
-	@echo "✓ Clove installed in development mode"
+	@uv sync --extra rnet
+	@echo "✓ Clove installed in development mode (uv venv at .venv)"
 
 # Clean build artifacts
 clean:
@@ -47,6 +47,6 @@ clean:
 	@find . -type f -name "*.pyo" -delete
 	@echo "✓ Cleaned build artifacts"
 
-# Run the application (development mode)
+# Run the application (development mode, via uv-managed venv)
 run:
-	@python -m app.main
+	@uv run python -m app.main
