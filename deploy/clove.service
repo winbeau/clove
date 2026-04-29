@@ -1,0 +1,32 @@
+[Unit]
+Description=Clove Claude reverse proxy
+Documentation=https://github.com/mirrorange/clove
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=winbeau
+Group=winbeau
+WorkingDirectory=/home/winbeau/clove
+EnvironmentFile=/home/winbeau/clove/.env
+
+# Run via the uv-managed venv. uv is installed at ~/.local/bin/uv per the
+# rust toolchain installer; adjust if uv lives elsewhere.
+ExecStart=/home/winbeau/.local/bin/uv run python -m app.main
+
+Restart=on-failure
+RestartSec=5
+
+# Hardening — relaxed enough to let DATA_FOLDER + log file work.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/winbeau/clove /home/winbeau/.clove
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

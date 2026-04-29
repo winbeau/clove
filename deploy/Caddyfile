@@ -1,0 +1,31 @@
+# Caddyfile for Clove — install at /etc/caddy/Caddyfile (or include from there).
+#
+# Caddy auto-provisions a Let's Encrypt cert for claude.selab.top, so make sure:
+#   1. The A/AAAA record for claude.selab.top points at this VPS.
+#   2. If you front this with Cloudflare, set the record to "DNS only" (grey
+#      cloud) — orange-cloud proxying conflicts with Caddy's own ACME flow and
+#      with Clove's outbound TLS impersonation against claude.ai.
+#   3. Ports 80 and 443 are open in the host firewall / security group.
+#
+# Reload after editing: `sudo systemctl reload caddy`.
+
+claude.selab.top {
+    encode zstd gzip
+
+    # Anthropic streaming responses are SSE — disable any buffering and bump
+    # idle timeouts so long generations don't get cut.
+    reverse_proxy 127.0.0.1:5201 {
+        flush_interval -1
+        transport http {
+            read_timeout 600s
+            write_timeout 600s
+        }
+    }
+
+    # Drop the default Caddy access log into journalctl rather than a file so
+    # `journalctl -u caddy -f` shows traffic. Override if you want JSON logs.
+    log {
+        output stderr
+        format console
+    }
+}
