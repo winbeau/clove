@@ -211,3 +211,5 @@ __marimo__/
 
 # Built frontend static files
 app/static/
+# Local TLS certs installed by acme.sh
+/deploy/certs/

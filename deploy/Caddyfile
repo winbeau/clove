@@ -1,18 +1,27 @@
-# Caddyfile for Clove — install at /etc/caddy/Caddyfile (or include from there).
+# Caddyfile for Clove on this VPS.
 #
-# Caddy auto-provisions a Let's Encrypt cert for claude.selab.top, so make sure:
-#   1. The A/AAAA record for claude.selab.top points at this VPS.
-#   2. If you front this with Cloudflare, set the record to "DNS only" (grey
-#      cloud) — orange-cloud proxying conflicts with Caddy's own ACME flow and
-#      with Clove's outbound TLS impersonation against claude.ai.
-#   3. Ports 80 and 443 are open in the host firewall / security group.
+# Why :8443 and a static cert:
+#   - port 443 on this host is occupied by Xray (REALITY), can't share
+#   - Let's Encrypt cert is issued out-of-band by acme.sh via DNS-01 (DNSPod),
+#     installed at /home/winbeau/clove/deploy/certs/, and renewed by the
+#     acme.sh cron with --reloadcmd hooking back into Caddy
 #
-# Reload after editing: `sudo systemctl reload caddy`.
+# Reload after editing: `systemctl --user reload caddy` or
+# `sudo systemctl reload caddy` depending on how the unit is installed.
 
-claude.selab.top {
+{
+    # Don't try to fight Xray for 80/443. We do TLS ourselves on 8443 with
+    # the externally-issued cert; no automatic ACME, no HTTP redirect.
+    auto_https off
+    admin off
+}
+
+claude.selab.top:8443 {
+    tls /home/winbeau/clove/deploy/certs/claude.selab.top.crt /home/winbeau/clove/deploy/certs/claude.selab.top.key
+
     encode zstd gzip
 
-    # Anthropic streaming responses are SSE — disable any buffering and bump
+    # Anthropic streaming responses are SSE — disable buffering and bump
     # idle timeouts so long generations don't get cut.
     reverse_proxy 127.0.0.1:5201 {
         flush_interval -1
@@ -22,8 +31,6 @@ claude.selab.top {
         }
     }
 
-    # Drop the default Caddy access log into journalctl rather than a file so
-    # `journalctl -u caddy -f` shows traffic. Override if you want JSON logs.
     log {
         output stderr
         format console
