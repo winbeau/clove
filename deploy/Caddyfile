@@ -15,6 +15,10 @@
     # since this host doesn't expose :80 publicly.
     auto_https disable_redirects
     admin off
+    # Caddy normally stores cert/state under $XDG_DATA_HOME (~/.local/share/caddy).
+    # The systemd unit hardens /home to read-only, so point storage at a
+    # dedicated /var/lib/caddy that ReadWritePaths grants us.
+    storage file_system /var/lib/caddy
 }
 
 claude.selab.top:8443 {

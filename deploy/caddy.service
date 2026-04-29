@@ -11,6 +11,10 @@ Group=winbeau
 
 # TENCENTCLOUD_SECRET_ID / _SECRET_KEY for the caddy-dns/tencentcloud plugin
 EnvironmentFile=/etc/caddy/secrets.env
+# Steer Caddy's per-user dirs away from /home (which we lock to read-only
+# below) and onto /var/lib/caddy (granted via ReadWritePaths).
+Environment=XDG_CONFIG_HOME=/var/lib/caddy
+Environment=XDG_DATA_HOME=/var/lib/caddy
 
 # /usr/local/bin/caddy is the xcaddy-built binary with the tencentcloud plugin
 ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile
@@ -21,6 +25,7 @@ LimitNOFILE=1048576
 PrivateDevices=true
 ProtectHome=read-only
 ProtectSystem=full
+ReadWritePaths=/var/lib/caddy
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]
