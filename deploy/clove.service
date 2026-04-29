@@ -11,9 +11,12 @@ Group=winbeau
 WorkingDirectory=/home/winbeau/clove
 EnvironmentFile=/home/winbeau/clove/.env
 
-# Run via the uv-managed venv. uv is installed at ~/.local/bin/uv per the
-# rust toolchain installer; adjust if uv lives elsewhere.
-ExecStart=/home/winbeau/.local/bin/uv run python -m app.main
+# Run via the uv-managed venv directly. We deliberately don't go through
+# `uv run` here because uv writes a lockfile at $UV_CACHE_DIR (~/.cache/uv
+# by default) on every invocation, which collides with ProtectHome=read-only.
+# uv is only needed at sync time (`make install-dev`); at run time we just
+# invoke the venv's interpreter.
+ExecStart=/home/winbeau/clove/.venv/bin/python -m app.main
 
 Restart=on-failure
 RestartSec=5
