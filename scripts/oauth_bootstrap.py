@@ -166,8 +166,8 @@ def main() -> None:
         auth_code = qs["code"][0]
         response_state = qs.get("state", [None])[0]
 
-    print("[3/3] POST console.anthropic.com/v1/oauth/token ...", file=sys.stderr)
-    token_data = {
+    print("[3/3] POST console.anthropic.com/v1/oauth/token (script attempt) ...", file=sys.stderr)
+    token_form = {
         "code": auth_code,
         "grant_type": "authorization_code",
         "client_id": OAUTH_CLIENT_ID,
@@ -175,25 +175,83 @@ def main() -> None:
         "code_verifier": verifier,
     }
     if response_state:
-        token_data["state"] = response_state
+        token_form["state"] = response_state
 
-    # Console rejects browser-fingerprint TLS. Use plain curl_cffi without impersonation.
-    with requests.Session(timeout=30) as s:
-        r = s.post(
-            OAUTH_TOKEN_URL,
-            data=token_data,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "User-Agent": "claude-cli/2.1.81 (external, cli)",
-            },
-            allow_redirects=False,
+    token: dict | None = None
+    last_error: str | None = None
+    for label, sess_kwargs, ua in (
+        ("plain", dict(timeout=30), "claude-cli/2.1.81 (external, cli)"),
+        ("chrome131", dict(timeout=30, impersonate=IMPERSONATE), user_agent),
+    ):
+        try:
+            with requests.Session(**sess_kwargs) as s:
+                r = s.post(
+                    OAUTH_TOKEN_URL,
+                    data=token_form,
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "User-Agent": ua,
+                    },
+                    allow_redirects=False,
+                )
+                if r.status_code == 200:
+                    token = r.json()
+                    print(f"      token endpoint accepted ({label})", file=sys.stderr)
+                    break
+                last_error = f"{label}: HTTP {r.status_code} body[:200]={r.text[:200]!r}"
+                print(f"      {label} failed: HTTP {r.status_code}", file=sys.stderr)
+        except Exception as e:
+            last_error = f"{label}: {e}"
+            print(f"      {label} raised: {e}", file=sys.stderr)
+
+    if token is None:
+        # Fall back: print a JS snippet the user can paste in DevTools on
+        # console.anthropic.com (which has the right cf_clearance + cookies).
+        token_form_js = json.dumps(token_form)
+        print(
+            "\n!!! Script-side token exchange failed (CF challenge or 403).\n"
+            "Falling back to browser-assisted exchange.\n",
+            file=sys.stderr,
         )
-        if r.status_code != 200:
-            sys.exit(
-                f"token exchange failed: HTTP {r.status_code}\n"
-                f"first 400 bytes: {r.text[:400]!r}"
-            )
-        token = r.json()
+        print(f"Last error: {last_error}\n", file=sys.stderr)
+        print(
+            "STEPS:\n"
+            "  1. Open https://console.anthropic.com/ in a browser tab.\n"
+            "     If Cloudflare shows 'Just a moment...', wait until the page\n"
+            "     loads (you may need to be logged in to console.anthropic.com).\n"
+            "  2. F12 -> Console tab.\n"
+            "  3. Paste the snippet below and press Enter.\n"
+            "  4. Copy the resulting JSON line and paste it back here.\n",
+            file=sys.stderr,
+        )
+        snippet = (
+            "(async () => {\n"
+            f"  const form = {token_form_js};\n"
+            "  const body = new URLSearchParams(form);\n"
+            "  const r = await fetch('https://console.anthropic.com/v1/oauth/token', {\n"
+            "    method: 'POST',\n"
+            "    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n"
+            "    body,\n"
+            "    credentials: 'include',\n"
+            "  });\n"
+            "  const text = await r.text();\n"
+            "  console.log('STATUS=' + r.status);\n"
+            "  console.log('JSON=' + text);\n"
+            "})();"
+        )
+        print("--- COPY FROM HERE ---")
+        print(snippet)
+        print("--- TO HERE ---\n")
+
+        pasted = input("Paste the JSON= line value here (just the JSON, no prefix): ").strip()
+        if pasted.startswith("JSON="):
+            pasted = pasted[5:].strip()
+        try:
+            token = json.loads(pasted)
+        except json.JSONDecodeError as e:
+            sys.exit(f"Could not parse pasted token JSON: {e}")
+        if "access_token" not in token:
+            sys.exit(f"Pasted JSON has no access_token field: {token!r}")
 
     expires_at = time.time() + int(token["expires_in"])
     bundle = {
