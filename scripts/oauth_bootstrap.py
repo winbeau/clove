@@ -37,14 +37,27 @@ OAUTH_REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback"
 OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
 OAUTH_AUTHORIZE_URL_TEMPLATE = "https://claude.ai/v1/oauth/{organization_uuid}/authorize"
 
-BROWSER_HEADERS = {
-    "Accept": "application/json",
+DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+)
+
+# claude.ai's web app sends these on every API call. CF and Anthropic's edge
+# both check at least User-Agent; some routes also gate on the Anthropic-*
+# headers, so we mirror what the screenshot showed.
+BASE_HEADERS = {
+    "Accept": "*/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Cache-Control": "no-cache",
     "Origin": CLAUDE_AI,
     "Referer": f"{CLAUDE_AI}/new",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Anthropic-Client-Platform": "web_claude_ai",
+    "Anthropic-Client-Version": "1.0.0",
 }
+
+# curl_cffi impersonation profile. cf_clearance is bound to a (IP, UA, TLS-JA4)
+# tuple — match the user's actual browser as closely as we can.
+IMPERSONATE = "chrome131"
 
 
 def b64url(raw: bytes) -> str:
@@ -68,10 +81,10 @@ def pick_organization(orgs: list[dict]) -> dict:
 def main() -> None:
     print(
         "Paste the FULL Cookie header from a working claude.ai browser request.\n"
-        "  Quickest way: open https://claude.ai, F12 -> Network, click any request,\n"
-        "  copy the value of the `Cookie:` request header (one long line with `;`).\n"
-        "  Must include `sessionKey` and Cloudflare's `__cf_bm` / `cf_clearance`\n"
-        "  if your IP gets challenged. Pasting only sessionKey will fail with 403.\n",
+        "  DevTools -> Network -> click /api/organizations (or any /api/* call)\n"
+        "  -> Headers -> copy the `Cookie:` value (one long line with `;`).\n"
+        "  Must include sessionKey AND cf_clearance / __cf_bm if your IP is\n"
+        "  challenged.\n",
         file=sys.stderr,
     )
     raw_cookie = getpass.getpass("Paste cookie header (input hidden): ").strip()
@@ -86,10 +99,24 @@ def main() -> None:
     if "sessionKey=" not in cookie_header:
         sys.exit("Pasted cookie does not contain sessionKey=, aborting.")
 
-    headers = {**BROWSER_HEADERS, "Cookie": cookie_header}
+    print(
+        "\nPaste the User-Agent header from THE SAME browser request (same\n"
+        "DevTools view, in Request Headers). cf_clearance is bound to (IP, UA,\n"
+        "TLS fingerprint), so this must match exactly. Press Enter alone to use\n"
+        f"the default: {DEFAULT_UA}\n",
+        file=sys.stderr,
+    )
+    raw_ua = input("User-Agent: ").strip()
+    user_agent = raw_ua or DEFAULT_UA
 
-    print("[1/3] GET /api/organizations ...", file=sys.stderr)
-    with requests.Session(impersonate="chrome", timeout=30) as s:
+    headers = {
+        **BASE_HEADERS,
+        "Cookie": cookie_header,
+        "User-Agent": user_agent,
+    }
+
+    print(f"[1/3] GET /api/organizations (impersonate={IMPERSONATE}) ...", file=sys.stderr)
+    with requests.Session(impersonate=IMPERSONATE, timeout=30) as s:
         r = s.get(f"{CLAUDE_AI}/api/organizations", headers=headers, allow_redirects=False)
         if r.status_code != 200:
             sys.exit(
