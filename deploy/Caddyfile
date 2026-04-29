@@ -1,23 +1,29 @@
 # Caddyfile for Clove on this VPS.
 #
-# Why :8443 and a static cert:
-#   - port 443 on this host is occupied by Xray (REALITY), can't share
-#   - Let's Encrypt cert is issued out-of-band by acme.sh via DNS-01 (DNSPod),
-#     installed at /home/winbeau/clove/deploy/certs/, and renewed by the
-#     acme.sh cron with --reloadcmd hooking back into Caddy
+# Why :8443 and DNS-01:
+#   - port 443 is held by Xray REALITY on this host, can't share.
+#   - We listen on :8443 and let Caddy fetch its own Let's Encrypt cert via
+#     DNS-01 against Tencent Cloud DNSPod (caddy-dns/tencentcloud plugin).
+#     Need a Tencent Cloud API key (SecretId + SecretKey) loaded from
+#     /etc/caddy/secrets.env via the systemd unit.
 #
-# Reload after editing: `systemctl --user reload caddy` or
-# `sudo systemctl reload caddy` depending on how the unit is installed.
+# Reload after editing: `sudo systemctl reload caddy`.
 
 {
-    # Don't try to fight Xray for 80/443. We do TLS ourselves on 8443 with
-    # the externally-issued cert; no automatic ACME, no HTTP redirect.
-    auto_https off
+    # No port 80 redirect — Xray doesn't conflict because Xray uses :443,
+    # but we explicitly disable the HTTP-side automatic redirect anyway
+    # since this host doesn't expose :80 publicly.
+    auto_https disable_redirects
     admin off
 }
 
 claude.selab.top:8443 {
-    tls /home/winbeau/clove/deploy/certs/claude.selab.top.crt /home/winbeau/clove/deploy/certs/claude.selab.top.key
+    tls {
+        dns tencentcloud {
+            secret_id {env.TENCENTCLOUD_SECRET_ID}
+            secret_key {env.TENCENTCLOUD_SECRET_KEY}
+        }
+    }
 
     encode zstd gzip
 

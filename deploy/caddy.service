@@ -1,5 +1,5 @@
 [Unit]
-Description=Caddy fronting Clove on :8443 (cert from acme.sh / DNSPod DNS-01)
+Description=Caddy fronting Clove on :8443 (cert via Tencent Cloud DNS-01)
 Documentation=https://caddyserver.com/docs/
 After=network-online.target
 Wants=network-online.target
@@ -8,11 +8,16 @@ Wants=network-online.target
 Type=notify
 User=winbeau
 Group=winbeau
-# /usr/local/bin/caddy is the binary you copied from /tmp/caddy
+
+# TENCENTCLOUD_SECRET_ID / _SECRET_KEY for the caddy-dns/tencentcloud plugin
+EnvironmentFile=/etc/caddy/secrets.env
+
+# /usr/local/bin/caddy is the xcaddy-built binary with the tencentcloud plugin
 ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile
 ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force
 TimeoutStopSec=5s
 LimitNOFILE=1048576
+
 PrivateDevices=true
 ProtectHome=read-only
 ProtectSystem=full

@@ -6,44 +6,45 @@ This setup terminates TLS in Caddy on port **8443** (because port 443 is held
 by Xray REALITY on this host). Friend's clients use
 `https://claude.selab.top:8443`.
 
-The TLS cert is issued out-of-band by `acme.sh` via DNSPod DNS-01 and dropped
-into `deploy/certs/` (gitignored) — Caddy reads it from there. acme.sh's cron
-auto-renews and hooks `caddy reload` on success.
+Caddy fetches its own Let's Encrypt cert via DNS-01 against Tencent Cloud
+DNSPod, using the `caddy-dns/tencentcloud` plugin. Build a custom Caddy
+binary once with `xcaddy`, supply Tencent Cloud API credentials via a
+secrets file, and Caddy handles issue + auto-renewal itself.
 
 ## One-time setup
 
-### 1. Issue the cert (already done if you reached `Cert success.`)
+### 1. Build Caddy with the tencentcloud plugin
 
 ```bash
-~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
- export DPI_Id='...'   # DNSPod International API ID
- export DPI_Key='...'  # DNSPod International API Key
-~/.acme.sh/acme.sh --issue --dns dns_dpi -d claude.selab.top
+sudo apt update && sudo apt install -y golang-go
+go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+export PATH=$PATH:$(go env GOPATH)/bin
+xcaddy build --with github.com/caddy-dns/tencentcloud
+# the resulting `caddy` binary is in the current directory
 ```
 
-### 2. Install cert to a stable path + register reload hook
+### 2. Install Caddy binary + secrets
+
+Get Tencent Cloud API credentials at
+<https://console.cloud.tencent.com/cam/capi> (CAM access key — SecretId +
+SecretKey). The associated CAM user needs the `QcloudDNSPodFullAccess`
+policy (or at minimum permission to add/delete TXT records on the zone).
 
 ```bash
-mkdir -p /home/winbeau/clove/deploy/certs
-~/.acme.sh/acme.sh --install-cert -d claude.selab.top --ecc \
-  --key-file       /home/winbeau/clove/deploy/certs/claude.selab.top.key \
-  --fullchain-file /home/winbeau/clove/deploy/certs/claude.selab.top.crt \
-  --reloadcmd      'systemctl --user reload caddy 2>/dev/null || sudo systemctl reload caddy'
-chmod 600 /home/winbeau/clove/deploy/certs/claude.selab.top.key
-```
-
-acme.sh writes a record in `~/.acme.sh/account.conf`; its daily cron picks
-this up and re-runs the install + reload on renewal.
-
-### 3. Install Caddy binary
-
-```bash
-# /tmp/caddy is the vanilla Caddy you downloaded earlier
-sudo install -m 0755 -o root -g root /tmp/caddy /usr/local/bin/caddy
+sudo install -m 0755 -o root -g root ./caddy /usr/local/bin/caddy
 caddy version
+
+# Write secrets file readable by the winbeau user only
+sudo mkdir -p /etc/caddy
+sudo tee /etc/caddy/secrets.env >/dev/null <<'EOF'
+TENCENTCLOUD_SECRET_ID=<your_secret_id>
+TENCENTCLOUD_SECRET_KEY=<your_secret_key>
+EOF
+sudo chown root:winbeau /etc/caddy/secrets.env
+sudo chmod 0640 /etc/caddy/secrets.env
 ```
 
-### 4. Drop in Caddyfile + systemd unit
+### 3. Drop in Caddyfile + systemd unit
 
 ```bash
 sudo install -m 0644 deploy/Caddyfile     /etc/caddy/Caddyfile
@@ -51,9 +52,15 @@ sudo install -m 0644 deploy/caddy.service /etc/systemd/system/caddy.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now caddy
 sudo systemctl status caddy --no-pager
+sudo journalctl -u caddy -n 50 --no-pager   # watch the ACME flow succeed
 ```
 
-### 5. Install Clove systemd unit
+On first boot Caddy will hit Tencent Cloud's API to add a
+`_acme-challenge.claude.selab.top` TXT record, wait for Let's Encrypt to
+verify it, then clean it up. Subsequent renewals (~60 days) repeat the
+same flow with no manual intervention.
+
+### 4. Install Clove systemd unit
 
 ```bash
 sudo install -m 0644 deploy/clove.service /etc/systemd/system/clove.service
